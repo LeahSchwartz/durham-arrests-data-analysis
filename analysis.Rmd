@@ -1,0 +1,571 @@
+---
+title: "Demographic and Spacial Trends in Durham Arrests"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+In the second week of class, we shifted our focus to white-collar 
+crime and the construction of criminality, 
+examining sources such as *Big Money Crime* and the This American Life episode 
+“The Giant Pool of Money” in order to understand how white-collar
+has contributed to some of the biggest economic disasters in the recent 
+history of the United States. We also examined ideas of how criminality is 
+viewed and constructed, dissecting sources like Lisa Marie Cacho’s *Social Death* to better 
+understand why the same actions are seen as more criminal when committed by different bodies. 
+These readings and discussions piqued my curiosity about the ways in which different 
+types of crime are viewed and prosecuted based on factors like race and place. 
+
+We later turned our attention to the topic of sex work and heard personal stories from people who engage in the 
+sex work industry. I became interested in these individuals and what factors led
+them to work in sex work despite the risks involved. 
+From these interests, I formed my final project. 
+Using my rudimentary data science skills, I decided to conduct an 
+exploratory data analysis of a data set of Durham arrest records from the last 
+12 years in order to examine overall trends in who is arrested for crime in general, 
+as well as who is arrested for white-collar crimes and crimes relating to sex work.
+This analysis specifically focuses on factors like 
+demographic and geographic differences and examines data findings with a critical GSF lens.    
+
+## Data set-up & cleaning
+
+The data set I will be analyzing was released by 
+the City and County of Durham and presents the arrests of adults made from
+4/1/2006 - 9/30/2018. I will first read in the data and load necessary libraries.
+
+``` {r setup-data, message = FALSE}
+library(tidyverse)
+library(infer)
+library(broom)
+library(knitr) 
+library(modelr) 
+library(dplyr) 
+
+
+original_data <- read_csv("data/durham.csv")
+```
+
+This data set is expansive, with over 180,000 rows and 21 
+columns. Because of this, my exploration of the data will be focused only on
+specific portions of the data. We can glimpse the size and type of data below. 
+
+
+``` {r glimpse-data}
+original_data %>% glimpse()
+```
+We see that the data set contains demographic variables for each arrest such as 
+race, ethnicity, sex, and age, data pertaining to the reason for arrest, and variables about the location of the arrest.
+
+Before we begin analyzing, we will clean up the data by removing rows that are
+missing key values or have used "U" to declare the variable undefined.
+
+``` {r clean-data}
+data <- original_data %>%
+  filter(!is.na(Race)) %>%
+  filter(Race != "U") %>%
+  filter(!is.na(District)) %>%
+  filter(District != "DSO") %>%
+  filter(!is.na(Ethnicity)) %>%
+  filter(Ethnicity != "U") %>%
+  filter(!is.na(Sex)) %>%
+  filter(!is.na(Age)) %>%
+  filter(!is.na(Description))
+```
+
+The data should now contain rows with complete information.
+
+
+Since this analysis will focus on the relation of race to crime, it is important
+to understand how race and ethnicity are presented within the data. The data uses
+the ethnicity column to determine if the arrested person is Hispanic while also
+filling in a race. As we can see, the vast majority, in fact almost 97%,
+of people marked as Hispanic are also marked as White. 
+
+``` {r examine-ethnicity}
+data %>%
+  filter(Ethnicity == "H") %>%  
+  count(Race) %>%
+  mutate(percent = n / sum(n) * 100)
+```
+
+The Race variable will be used often in this analysis and since grouping all
+Hispanic individuals with white individuals would
+provide a generalization that overlooks their ethnicity, we are going to remove 
+individuals who have been recorded as Hispanic and only focus on race for now. 
+
+``` {r remove-H}
+data <- data %>%
+  filter(Ethnicity != "H") 
+```
+  
+We can now look at the overall racial breakdown of crimes in Durham:
+
+``` {r crimes-by-race}
+ data %>%  
+  group_by(Race) %>% 
+  count() 
+```
+
+As we can see, the number of crimes in this dataset committed by a person who
+is neither white or black is very low, so we will remove these values and narrow 
+our focus to only crimes committed by black and white individuals as a means
+of simplification and so that graphs/numbers do not contain very small numbers 
+that would make them appear skewed and difficult to read. 
+
+``` {r remove-races}
+data <- data %>%
+  filter(Race %in% c("B", "W")) %>%
+  droplevels
+```
+
+## Definitions & background
+
+Now that we have cleaned the data, let us delve into a few  definitions
+and pieces of background information that are relevant to the analysis. The primary focus 
+from this point on is to examine and compare overall 
+arrest trends and arrest trends for two different categories 
+of crime: white-collar crimes and sex work (criminalized/illegal types of sex work). 
+We will look at how the trends in arrests pertaining to white-collar crimes and sex work differ from each other 
+and differ from or adhere to the overarching trends. Where the data 
+suggests an interesting story, we will use a GSF lens to further analyze and discuss.
+
+
+Before we start analyzing white-collar crimes and sex work, we should have
+a working definition of what these terms generally refer to. 
+
+
+### White-collar crime 
+
+White-collar crime is a phrase that was initially popularized by criminologist 
+Ediwn Sutherland as a means of naming the unlawful actions of ‘robber barons’ 
+in the second half of the 1800s. Prior to this point, crime was primarily associated 
+with “slum neighborhoods” and almost never with 
+those from “the upper echelons of society” ("White-Collar-Crime Cheat Sheet" 2018). Modern definitions 
+of white-collar crime denote it as a non-violent crime in which the "primary motive" is 
+"typically financial" and popularly associate it with people who occupy 
+"a position of power and/or prestige" (“White-Collar Crime - Overview" 2020).
+Despite the long-standing view of white-collar crime as uncommon, it is neither nearly as rare 
+nor as harmless as it was once believed to be, but it still continues to be less a 
+part of the common consciousness than most other types of crime. 
+White-collar crime tends to be 
+seen as underrepresented in the news due to the idea that such
+stories “attract less publicity” compared to 
+other types of crime (Dodge 2020). White-collar crime is also seen as less prevalent than it really is because prosecution 
+has proven increasingly challenging. In today's digital age, it has become 
+"even easier" for white-collar crimes like check fraud, insider trading, and 
+money laundering to "slip under the radar" ("White-Collar-Crime Cheat Sheet" 2018). Not 
+only is it difficult to detect and prove white-collar crime, but there are 
+also human biases at play.The authors of *Big Money Crime* note that white-collar 
+crime is "rarely criminally prosecuted" and that this is at least in part because of "the biases of the criminal 
+justice system" that allow white-collar criminals to
+receive “differential” treatment in comparison to those accused of other types 
+of crimes (Calavita et al. 1997, 20).
+
+### Sex work
+Sex work can be understood as work in which a person receives 
+"money or goods in exchange for consensual sexual services" ("About Sex Work" 2019).
+This umbrella term includes prostitution, which is the legal word for "engaging, agreeing, or offering to engage 
+in sexual conduct with another person in return for a fee" (“Prostitution" 2020).
+The term prostitution is however, in the United States, generally thought to carry 
+"connotations of criminality and immorality" while sex work is a broader and less
+stigmatized category ("About Sex Work" 2019). 
+Many people who work in this industry 
+"struggle with poverty" and rely on sex work as their income, but there are also 
+people who engage in sex work because it offers more "flexible" working conditions 
+and others still who use it to "explore and express their sexuality" ("About Sex Work" 2019).
+Certain types of sex work, particularly prostitution, are not currently legal in the United States
+and this is an ongoing debate, as there is evidence that the criminalization of sex work 
+"compromises sex workers’ health and safety" by pushing sex work underground ("About Sex Work" 2019). Decriminalization of sex work has proven difficult and this is largely due to its negative reputation. As Becki L. Ross 
+explains in her article "Sex and (Evacuation from) the City," 
+sex workers have long been "vilified" as "transmitters of disease and immorality" (Ross 2010, 198). This view of sex work encourages policy makers to keep it from becoming legal or decriminialized. 
+
+## Data Analysis
+
+### Representation of white-collar crime and sex work in the data
+Since white-collar crime and sex work are both broad terms and the dataset
+is not organized to make these categories obvious, we must choose how we will use 
+the Description of the arrest row to focus
+on them. Based on the Descriptions of arrests, there are many instances
+of fraud, a type of white-collar crime, and prostitution, a type of sex work. We 
+will focus on these as our representations of white-collar crime and sex work 
+within the data and classify any arrest with the word "Fraud" in its description as 
+fraud and classify any arrest with the word 
+"Prostitution" in its description as prostitution. Prostitution will include soliciting and
+engaging in prostitution, as the data set does not differentiate whether the person 
+was selling or buying sex. 
+
+
+In order achieve this breakdown of arrests by subcategory, we must add a new variable. This variable 
+will be called subcategory. 
+Any reason for arrest that is not to do with fraud or prostitution will earn the subcategory row a marker of "Other."
+Below, we mutate the data set to add this variable.
+
+```{r mutate-sub-category}
+data <- data %>%
+  mutate(Sub_Category =
+           case_when(
+             str_detect(Description, 'PROSTITUTION') ~ "PROSTITUTION",
+             str_detect(Description, 'FRAUD') ~ "FRAUD",
+             TRUE ~ "OTHER"
+             ))
+```
+
+We will now create a second data set that contains only the rows that relate 
+to prostitution and fraud.
+
+```{r remove-other}
+sub_category_data <- data %>%
+  filter(Sub_Category != "OTHER")
+```
+
+
+### Demographic trends
+
+First, we will look at demographic factors and how they differ based on reason 
+for arrest. Demographic factors in this data set include
+race, sex, and age. It is important to note that the percentage of people in Durham who
+are black vs. white and male vs. female. If the percentages 
+are markedly different, 
+graphs showing this information would be misleading (Ex. if 90% of arrests 
+are of black people but Durham is 90% black, the graph would tell a misleading story).
+Luckily, the percent of Durham that is black vs. white (and not Hispanic) differs 
+by less than two percentage points 
+and the percent that is male vs. female is roughly equal, so we can 
+assume graphs including race and sex provide a non-skewed depiction (“Durham, NC Census Place” 2018). 
+
+
+Below, we graph the percent of arrested individuals that are black vs. white. We
+do this first for all arrests, to show the overarching trends. 
+
+```{r race}
+data %>%
+  count(Race) %>%
+  mutate(percent = n/nrow(data) * 100) %>%
+  ggplot(mapping = aes(x = Race, y=percent, fill=Race)) +
+     geom_bar(stat="identity") +  
+     labs(x = "Race", y = "Percent of Arrests",
+     title= "Race of Arrested Individuals", subtitle = "", fill = "") + 
+     theme_bw() + 
+     theme(panel.border = element_blank()) 
+```
+Over 80% of those arrested are black and under 20% are white.
+
+Next, we graph the percent of arrested individuals for arrests involving fraud and
+arrests involving prostitution that are black vs. white. 
+
+```{r sub-category-race}
+
+sub_category_data %>%
+  group_by(Sub_Category) %>%
+  count(Race) %>%
+  mutate(percent = n/sum(n) * 100) %>%
+  ggplot(mapping = aes(x = Sub_Category, y=percent, fill=Race)) +
+     geom_bar(position="dodge", stat="identity") +  
+     labs(x = "Arrest Sub-Category", y = "Percent of Arrests for Sub-Category",
+     title= "Race of Arrested Individuals ", subtitle = "by sub-category", fill = "Race") + 
+     theme_bw() + 
+     theme(panel.border = element_blank()) 
+```
+About 66% of those arrested for fraud are black and around 34% are white.
+Around 63% of those arrested for prostitution are black and about 37% are white.
+
+For both fraud and prostitution, arrests are much more heavily white than for
+overall arrests, however, black people are still represented far more.
+
+
+Next, we graph the percent of arrested individuals that are female vs. male. We
+do this first for all arrests. 
+
+```{r sex}
+data %>%
+  count(Sex) %>%
+  mutate(percent = n/nrow(data) * 100) %>%
+  ggplot(mapping = aes(x = Sex, y=percent, fill=Sex)) +
+     geom_bar(stat="identity") +  
+     labs(x = "Sex", y = "Percent of Arrests",
+     title= "Sex of Arrested Individuals", subtitle = "", fill = "") + 
+     theme_bw() + 
+     theme(panel.border = element_blank()) 
+```
+Nearly 80% of individuals arrested are male and just over 20% are female.     
+
+Next, we graph the percent of arrested individuals for arrests involving fraud and
+arrests involving prostitution that are female vs. male. 
+
+```{r sub-category-sex}
+sub_category_data %>%
+  #filter(Sub_Category != "OTHER") %>%
+  group_by(Sub_Category) %>%
+  count(Sex) %>%
+  mutate(percent = n/sum(n) * 100) %>%
+  ggplot(mapping = aes(x = Sub_Category, y=percent, fill=Sex)) +
+     geom_bar(position="dodge", stat="identity") +  
+     labs(x = "Arrest Sub-Category", y = "Percent of Arrests for Sub-Category",
+     title= "Sex of Arrested Individuals", subtitle = "by sub-category", fill = "Sex") + 
+     theme_bw() + 
+     theme(panel.border = element_blank()) 
+```
+
+About 43% of those arrested for fraud are female and around 57% are male
+Around 65% of those arrested for prostitution are female and about 35% are male.
+
+For both fraud and prostitution, arrests are much more heavily female than for
+overall arrests. This is especially true for prostitution, where the majority
+of arrests are of females.
+
+
+     
+Finally, we make a boxplot of and output summary statistics concerning
+the age of arrested individuals. We do this first for all arrests. 
+
+```{r age}
+data %>%
+  ggplot(aes(x = Age, y = "")) +
+        geom_boxplot() + 
+        labs(
+          title = "Age of Arrested Individual", 
+          x = "Age",
+          y="")
+
+data %>%
+  summarise(
+    median_age = median(Age),
+    IQR_age = IQR(Age))
+```
+As we can see from the boxplot, median, and IRQ, the median age of arrested 
+individuals 29 and 50% of arrested individuals fall between the ages of 20.5 
+and 37.5 years old.
+
+
+Next, we make a boxplot of and output summary statistics concerning
+the age of arrested individuals for arrests involving fraud and
+arrests involving prostitution. 
+
+``` {r sub-category-age}
+sub_category_data %>%
+  ggplot(aes(x = Sub_Category, y = Age)) +
+        geom_boxplot() + 
+        labs(
+          title = "Age of Arrested Individual", 
+          subtitle = "By Sub-Category",
+          x = "Sub-Category",
+          y="Age")
+
+sub_category_data %>%
+  group_by(Sub_Category) %>%
+  summarise(
+    median_age = median(Age),
+    IQR_age = IQR(Age))
+
+```
+The median age of arrested individuals who were
+arrested on charges of fraud is 32 and and 50% of such individuals fall 
+between the ages of 24.5 and 39.5 years old.The median age of arrested individuals who were
+arrested on charges of prostitution is 36 and and 50% of such individuals fall 
+between the ages of 28.5 and 43.5 years old.
+
+
+For both fraud and prostitution, arrested individuals are generally of an older
+age than overall arrests. Once again, this difference is especially true for 
+prostitution. 
+
+
+### Discussion of demographic trends
+
+As we can see from the two bar charts and the box-plot, the overall arrests in Durham are very
+much skewed by race, sex, and age. The arrested individuals are overwhelmingly
+young, black, and male. It would be easy to simply attribute these statistics 
+to more black people committing crimes. However, that would overlook the complex factors that play into
+who is and who is not arrested for a crime, such as biases and preconceptions that 
+construct certain types of bodies as more likely to be criminal than others. 
+In Lisa Marie Cacho's book *Social Death*, Cacho describes how people of 
+certain races are viewed as having unequal levels of presumed innocence or guilt. 
+She gives the example of how news coverage during Hurricane Katrina depicted 
+black men as having "looted" for food, while white people performing similar 
+actions were reported to have simply "found" food (2012, 2). Such descriptions suggest that the same action
+is only sometimes viewed as criminal and that it depends very much on who performs it.
+Cacho makes the point that young black men are "persistently stereotyped as criminal" and that many
+criminal acts are eveen "unrecognizable" if there is not a "black body" at their center
+(2012, 2). This idea is supported by the fact that black people are not only over-represented in Durham area arrests,
+but also in arrests and jails across the country, with African Americans being 
+“5.1 times more likely than Whites to be incarcerated” (Hetey & Eberhardt 2018, 183).
+Although this Durham dataset gives no clear reason as to why young, black, men are
+arrested at such high rates and we cannot possibly determine an exhaustive list of reasons, 
+it would be an oversight to take that data
+as suggesting that people who are young, black, and/or men 
+simply commit the most crimes and not to think more about the human biases and 
+preconceived notions of crime that are at play. 
+
+
+Arrests relating to fraud are still, overall, young, black, and male, but to a much
+lesser degree than overall arrests. The median age is only a few years older, but there
+are considerably more people arrested who are white and/or female. It is unsurprising that
+fraud would see more white people being arrested, as white-collar crime is generally 
+associated with middle-class people and lines of wealth often correspond to race 
+in the United States. In asking why even more white people are not represented, it
+is helpful to actually examine some examples of crimes relating to fraud in the
+data set. We can see the 5 most common below:
+``` {r popular-fraud}
+sub_category_data %>%
+  filter(Sub_Category == "FRAUD") %>%
+  count(Description) %>%
+  arrange(desc(n)) %>%
+  head(5)
+```
+
+We can note that the five most common types of fraud here are obtaining a controlled
+substance by fraud/forgery, fraudulent use of a credit card, defrauding an innkeeper/campground owner, insurance fraud, and fraudulent rental of a vehicle. 
+Although these are crimes motivated by financial interest, they are low-level types
+of fraud and not the huge corporate scandals we tend to think of as white-collar crime. 
+The flashier types of white-collar crime that are more associated with wealth and the middle/upper class are also the ones are detected and prosecuted less 
+for many of the reasons pertaining to biases and prosecution difficulties as explained before. 
+
+
+Like fraud, records of arrests for prostitution are also more white and more female than overall arrests. The sex difference is especially pronounced 
+with the majority of those arrested being female despite females making up a very 
+small percent of arrests for overall arrests Prostitution also seems to have 
+an older population as its median age of arrested individuals is 7 years older 
+than overall trends. It is not surprising that the majority of people arrested 
+are female, as the vast majority (about 80%) of prostitutes across the world are
+female (“How Many Prostitutes" 2020). This does suggest though
+that perhaps people engaging in selling sex are punished more often than those
+buying sex, which could be related to the prejudices towards those
+in the sex work industry that have already been discussed. 
+
+The difference in 
+median age is not nearly as present in fraud arrests and is particularly interesting
+to see in arrests relating to prostitution, as 80% of prostitutes in the world are between the ages of 13 and 25 (“How Many Prostitutes" 2020). This suggests that either the age of
+sex workers in Durham is older than this global norm, or perhaps that the people who are
+looking to buy sex are significantly older than the sex workers 
+and that this brings up the average age of the individuals arrested for engaging in
+prostitution. 
+
+### Spacial trends
+
+Next, we will look at spacial trends by looking at arrest rates in each of the five police
+districts of Durham and examining how they vary based on overall trends vs. 
+trends in fraud arrests and prostitution arrests. 
+
+
+First, we graph the percent of arrests that take place in each of the districts.
+``` {r overall-district}
+data %>%
+  count(District) %>%
+  mutate(percent = n/nrow(data) * 100) %>%
+   ggplot(mapping = aes(x = District, y=percent, fill=District)) +
+     geom_bar(stat="identity") +  
+     labs(x = "District", y = "Percent of Arrests", 
+     title= "Percent of Arrests Taking Place in Each District", subtitle = "", fill = "") + 
+   #  coord_flip() +
+     theme_bw() + 
+    theme(panel.border = element_blank())
+```
+This graph demonstrates that there is the highest number of arrests in District 1 with 
+slightly less than a quarter of all arrests taking place there.
+District 5 is close behind with around 22.5% of all arrests taking place within it. 
+District 2 has about 20% of arrests, District 4 has around 17% of arrests, and 
+District 3 has the lowest percent of arrests at just over 15%. 
+
+
+Now, we will see how these spacial patterns differ for arrests relating to fraud
+and prostitution. 
+``` {r sub-category-district}
+sub_category_data %>%
+  group_by(Sub_Category) %>%
+  count(District) %>%
+  mutate(percent = n/sum(n) * 100) %>%
+  ggplot(mapping = aes(x = Sub_Category, y=percent, fill=District)) +
+     geom_bar(position="dodge", stat="identity") +  
+     labs(x = "Arrest Sub-Category", y = "Percent of Arrests for Sub-Category", 
+     title = "Percent of Arrests Taking Place in Each District", 
+          subtitle = "By Sub-Category") + 
+     #coord_flip() +
+     theme_bw() + 
+    theme(panel.border = element_blank())
+
+```
+
+We can see that, for arrests concerning fraud, 
+there are the highest number of arrests in District 5 with 
+about 37% of arrests taking place there. District 2 has the next most, 
+then District 3, then Districts 1 and 4. No other districts are particularly close to District 5.
+
+For arrests concerning prostitution, District 1 has a staggeringly high percentage
+of arrests with over 65% of them taking place in District 1 alone.
+District 4 has the next most, then District 5, and then Districts 2 and 3 with 
+very low percentages of arrests. District 1 far outshadows all other districts 
+with arrests related to prostitution.
+
+
+### Discussion of spacial trends 
+
+When looking at spacial trends in arrests, it is noteworthy to keep in mind that Districts 
+1-4 are largely residential while District 5 is unique, as it is the downtown
+Durham area which includes very few residential units and is "a hub for 
+employment, entertainment, and transit" (Stuit 2019, 10). This makes it an area
+that many come to for work and leisure and may play a role in the high number of 
+overall arrests.
+
+In examining the spacial differences in arrests for arrests relating to fraud
+and prostitution, we can see that fraud arrests are more prevalent in District 5 
+compared to overall arrests. This makes sense given that District 5 is the downtown
+area. Since white-collar crimes like fraud are generally financially motivated and often
+involve interactions with a company or business, it 
+would seem likely that they would take place in areas were such institutions are 
+located.
+
+The spatial difference for prostitution is somewhat more curious and raises the
+question of what factors might influence the high number of arrests for prostituion
+related charges in District 1. Looking at the map attached to the last page of Jim Stuit's
+report on gang violence in Durham, we can see where District 1 is roughly located (Stuit 2019, 19). 
+Examining the Durham Neighborhood Compass, a website designed to use data to visually represent
+trends in Durham, shows us that the median household income in the area comprising District 1. 
+We can see that most of the area has lower than average income and since median household income 
+is "an indication of how well people are doing financially in a neighborhood," we can 
+see that District 1 is an area that is struggling financially, suggesting that many people
+in that area are not comfortable in terms of income and providing a possible explanatory
+factor in the relatively high rates of prostitution ("Durham Neighborhood Compass" 2018). 
+There are certainly more factors at play, but the income trend does suggest a correlation 
+worth pursuing. 
+
+### Suggestions for Future Work
+
+KJLSDNfg;sdngadgmnsdal;gd
+
+## Works Cited
+
+Calavita, Kitty, Henry N. Pontell, and Robert H. Tillman. Big Money Crime: Fraud and Politics in the Savings and Loan Crisis. Berkeley, Calif. etc: University of California, 1997.
+
+Cacho, Lisa Marie.  Social death: Racialized Rightlessness and the Criminalization of the Unprotected. New York: New York University Press, 2012.
+
+“Clearing Up Some Myths About Sex Work.” Open Society Foundations, April 2019. https://www.opensocietyfoundations.org/explainers/understanding-sex-work-open-society. 
+
+Dodge M. A Black Box Warning: The Marginalization of White-Collar Crime Victimization. Journal of White Collar and Corporate Crime. 2020;1(1):24-33. doi:10.1177/2631309X19888501
+
+“Durham, NC Census Place.” Data USA, 2018. https://datausa.io/profile/geo/durham-nc/#:~:text=The%205%20largest%20ethnic%20groups,and%2090%25%20are%20U.S.%20citizens. 
+
+Hetey RC, Eberhardt JL. The Numbers Don’t Speak for Themselves: Racial Disparities and the Persistence of Inequality in the Criminal Justice System. Current Directions in Psychological Science. 2018;27(3):183-187. doi:10.1177/0963721418763931
+
+“How Many Prostitutes Are in the United States and the Rest of the World? - Prostitution - ProCon.org.” Prostitution, March 19, 2020. https://prostitution.procon.org/questions/how-many-prostitutes-are-in-the-united-states-and-the-rest-of-the-world/. 
+
+Median Household Income (Census Blockgroups) - Durham Neighborhood Compass. DataWorks NC, 2018. https://compass.durhamnc.gov/en/compass/MEDINC/blockgroup. 
+
+“Prostitution.” Legal Information Institute. Legal Information Institute, July 2020. https://www.law.cornell.edu/wex/prostitution. 
+
+Ross, Becki L. “Sex and (Evacuation from) the City: The Moral and Legal Regulation of Sex Workers in Vancouver’s West End, 1975—1985.” Sexualities 13, no. 2 (2010): 197–218. https://doi.org/10.1177/1363460709359232. 
+
+The Gang Reduction Strategy Steering Committee of Durham, North Carolina. [ITALICS] Gang Incidents in Durham NC (2019).[ITALICS] by Jim Stuit. Durham, NC: Web, 2019, https://www.dconc.gov/home/showdocument?id=32576.
+
+“Types of Crime.” Social Problems. University of Minnesota Libraries Publishing edition, 2015. This edition adapted from a work originally produced in 2010 by a publisher who has requested that it not receive attribution., March 25, 2016. https://open.lib.umn.edu/socialproblems/chapter/8-2-types-of-crime/. 
+
+“White-Collar Crime - Overview, Types, Classifications.” Corporate Finance Institute, August 26, 2020. https://corporatefinanceinstitute.com/resources/knowledge/finance/white-collar-crime/
+
+“The White-Collar-Crime Cheat Sheet.” The New York Times. The New York Times, May 3, 2018.
+
+
+
+
